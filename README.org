@@ -1,0 +1,7 @@
+tides.el is intended to provide elisp mechanisms for accessing [[https://www.tidesandcurrents.noaa.gov/][NOAA
+tidal forecast data]].
+
+* Status
+
+It is currently in a pre-alpha state and not suited for any serious
+use.
