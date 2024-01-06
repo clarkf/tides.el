@@ -3,5 +3,22 @@ tidal forecast data]].
 
 * Status
 
-It is currently in a pre-alpha state and not suited for any serious
-use.
+It is currently in a alpha state and ready for tinkering. Expect bugs
+and rough edges.
+
+* Usage
+
+Predictions can be viewed interactively via ~tides-predict~, which
+will present today's tidal forecast in roughly columnar format.
+
+~tides-predict~ can also be called from elisp with a callback, for
+example:
+
+#+begin_src elisp
+  (tides-predict (lambda (predictions)
+                   (message "I have received %d predictions."
+                            (length predictions))))
+#+end_src
+
+Please see the docstring of ~tides-predict~ for details on the format
+of the predictions.

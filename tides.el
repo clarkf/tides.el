@@ -43,6 +43,12 @@ See https://api.tidesandcurrents.noaa.gov/api/prod/#application."
   :group 'tides
   :type '(string))
 
+(defcustom tides-station-id
+  nil
+  "The default station identifier for tides.el."
+  :group 'tides
+  :type '(choice integer (const nil)))
+
 (defconst tides--time-regex
   ;; "2024-01-05 00:38"
   (rx string-start
@@ -85,7 +91,10 @@ of the prediction.  The :level property indicates the height in
 feet of the tide at that time.  The :type property will be a
 symbol of either high or low, indicating whether the prediction
 is for a high- or low-tide."
-  (interactive (list (read-from-minibuffer "Station ID: ")))
+  (interactive (list (read-from-minibuffer "Station ID: "
+                                           (if tides-station-id
+                                               (format "%s" tides-station-id)
+                                             nil))))
 
   (unless begin-date
     (setq begin-date (tides-midnight-today)))
