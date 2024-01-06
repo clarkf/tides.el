@@ -21,6 +21,8 @@
 ;;; Code:
 
 (require 'calendar)
+(require 'time-date)
+(require 'url-util)
 
 (defgroup tides nil
   "NOAA tidal forecasts."
@@ -50,12 +52,17 @@ See https://api.tidesandcurrents.noaa.gov/api/prod/#application."
       string-end)
   "Regular expression for parsing NOAA times strings.")
 
-(defun tides-predict (station-id &optional callback)
+(defun tides-predict (station-id &optional begin-date end-date callback)
   "Retrieve today's tidal forecast for STATION-ID.
 
 CALLBACK if present, is a function that takes a single argument,
 the prediction, and will be called after the prediction is
 retrieved.
+
+The predictions will be bounded by BEGIN-DATE and END-DATE, which
+are calendrical date-times.  If nil or absent, BEGIN-DATE will
+default to midnight of the current day local time.  If nil or
+absent, END-DATE will default to 24 hours after BEGIN-DATE.
 
 The prediction will be a list where each element is a time,
 height and classification for today.  For example:
@@ -74,7 +81,14 @@ symbol of either high or low, indicating whether the prediction
 is for a high- or low-tide."
   (interactive (list (read-from-minibuffer "Station ID: ")))
 
-  (url-retrieve (tides--build-url station-id)
+  (unless begin-date
+    (setq begin-date (tides-midnight-today)))
+
+  (unless end-date
+    (setq end-date (decoded-time-add begin-date
+                                     (make-decoded-time :day 1))))
+
+  (url-retrieve (tides--build-url station-id begin-date end-date)
                 (lambda (status)
                   (if-let (err (plist-get status :error))
                       (error "Error: %s" err))
@@ -99,14 +113,19 @@ is for a high- or low-tide."
 
                     (when callback
                       (apply callback result))))
-                nil t t))
+                nil))
 
-(defun tides--build-url (station-id)
-  "Build the API URL for a request to STATION-ID."
+(defun tides--build-url (station-id begin-date end-date)
+  "Build the API URL for a request.
+
+Predictions will for the station identified by the numeric
+STATION-ID between BEGIN-DATE and END-DATE."
   (concat
    "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
-   "?date_begin=" (tides--get-period-start)
-   "&range=24"
+   "?begin_date=" (url-hexify-string (tides--format-date begin-date)
+                                     url-query-allowed-chars)
+   "&end_date=" (url-hexify-string (tides--format-date end-date)
+                                   url-query-allowed-chars)
    "&station=" (format "%s" station-id)
    "&product=predictions"
    "&datum=MLLW"
@@ -130,7 +149,7 @@ parse the data from the current buffer."
   "Interpret a single PREDICTION element."
   (list :time (tides--interpret-time (alist-get 't prediction))
         :level (string-to-number (alist-get 'v prediction))
-        :type (if (string= (alist-get 'type prediction)
+        :type (if (string= (downcase (alist-get 'type prediction))
                            "h")
                   'high 'low)))
 
@@ -158,17 +177,26 @@ See `time-convert' for information on time formats."
           0 ; UTC offset
           )))
 
-(defun tides--get-period-start (&optional now)
-  "Get the period starting string for a date.
+(defun tides-midnight-today (&optional now)
+  "Convenience function for determining the midnight preceding NOW.
 
-NOW must be a Lisp timestamp and not a calendrical date-time.  If
-omitted, defaults to `current-time'."
-  (let* ((midnight (decode-time now)))
+Useful for computing the date arguments to `tides-predict'.
+
+Returns a calendrical date-time, see `decode-time' for details on
+the format."
+  (let* ((now (or now (current-time)))
+         (midnight (decode-time now)))
     (setf (decoded-time-hour midnight) 0
           (decoded-time-minute midnight) 0
           (decoded-time-second midnight) 0)
-    (format-time-string "%Y%m%d%H%M"
-                        (encode-time midnight) t)))
+    midnight))
+
+(defun tides--format-date (date)
+  "Format DATE according to the NOAA API expectations.
+
+Note that seconds are discarded and that the result will be in UTC."
+  (format-time-string "%Y%m%d %H:%M"
+                      (encode-time date) t))
 
 (provide 'tides)
 ;;; tides.el ends here

@@ -19,10 +19,31 @@
 (require 'time-date)
 
 (ert-deftest test-build-url ()
-  (let ((url (tides--build-url 1234)))
+  (let ((url (tides--build-url 1234 (tides-midnight-today) (tides-midnight-today))))
     (should (string-search "station=1234" url)))
-  (let ((url (tides--build-url 4321)))
-    (should (string-search "station=4321" url))))
+
+  (let ((url (tides--build-url 4321 (tides-midnight-today) (tides-midnight-today))))
+    (should (string-search "station=4321" url)))
+
+  (let* ((start (make-decoded-time :year 2024 :month 1 :day 6
+                                   :hour 0 :minute 0 :second 0
+                                   :zone -28800))
+         (stop (decoded-time-add start (make-decoded-time :day 1)))
+         (url (tides--build-url 1 start stop)))
+    ;; midnight PT is 8am UTC
+    (should (string-search "begin_date=20240106%2008:00&" url))
+    (should (string-search "end_date=20240107%2008:00&" url))))
+
+(ert-deftest test-tides-midnight-today ()
+  ;; 01:02:03AM
+  (let ((now (encode-time (make-decoded-time :year 2024 :month 1 :day 6
+                                             :hour 1 :minute 2 :second 3
+                                             :zone -28800))))
+    ;; 00:00:00AM
+    (should (time-equal-p (make-decoded-time :year 2024 :month 1 :day 6
+                                             :hour 0 :minute 0 :second 0
+                                             :zone -28800)
+                          (tides-midnight-today now)))))
 
 (ert-deftest test-interpret-predictions-response ()
   (with-temp-buffer
@@ -37,18 +58,6 @@
                    0.576))
         (should (eq (plist-get one :type)
                     'low))))))
-
-(ert-deftest test-determine-date ()
-  (let* ((calendrical (make-decoded-time :hour 1
-                                         :minute 2
-                                         :second 3
-                                         :year 2024
-                                         :month 1
-                                         :day 5
-                                         :zone -28800))
-         (timestamp (encode-time calendrical)))
-    (should (string= "202401050800"
-                     (tides--get-period-start timestamp)))))
 
 (provide 'tides-test)
 ;;; tides-test.el ends here
