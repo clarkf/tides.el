@@ -50,10 +50,8 @@ See https://api.tidesandcurrents.noaa.gov/api/prod/#application."
       string-end)
   "Regular expression for parsing NOAA times strings.")
 
-(defun tides-predict (station-id &optional tz callback)
+(defun tides-predict (station-id &optional callback)
   "Retrieve today's tidal forecast for STATION-ID.
-
-TZ is the timezone that the result should be interpreted in.
 
 CALLBACK if present, is a function that takes a single argument,
 the prediction, and will be called after the prediction is
@@ -77,13 +75,15 @@ is for a high- or low-tide."
   (interactive (list (read-from-minibuffer "Station ID: ")))
 
   (url-retrieve (tides--build-url station-id)
-                (lambda (_status)
+                (lambda (status)
+                  (if-let (err (plist-get status :error))
+                      (error "Error: %s" err))
+
                   ;; FIXME it doesn't seem like there's a better way
                   ;; to do this presently.
                   (goto-char (1+ url-http-end-of-headers))
 
-                  (let* ((zone (or tz calendar-time-zone))
-                         (result (tides--parse-predictions-response zone)))
+                  (let ((result (tides--parse-predictions-response)))
 
                     ;; if executed interactively, display the prediction
                     (when (not (or executing-kbd-macro noninteractive))
@@ -105,41 +105,37 @@ is for a high- or low-tide."
   "Build the API URL for a request to STATION-ID."
   (concat
    "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
-   "?date=today"
+   "?date_begin=" (tides--get-period-start)
+   "&range=24"
    "&station=" (format "%s" station-id)
    "&product=predictions"
    "&datum=MLLW"
-   ;; while it's tempting to retrieve in GMT/UTC, the API actually
-   ;; determines "today" via the provided time zone.
-   "&time_zone=lst_ldt"
+   "&time_zone=gmt"
    "&interval=hilo"
    "&units=english"
    "&application=" tides--application-identifier
    "&format=json"))
 
-(defun tides--parse-predictions-response (tz)
-  "Interpret a NOAA tide prediction response in timezone TZ.
+(defun tides--parse-predictions-response ()
+  "Interpret a NOAA tide prediction response.
 
 Intended to be used as a callback for `url-retrieve', this will
 parse the data from the current buffer."
   (let* ((parsed (json-parse-buffer :object-type 'alist))
          (predictions (alist-get 'predictions parsed)))
-    (seq-map (lambda (p) (tides--interpret-prediction p tz))
+    (seq-map (lambda (p) (tides--interpret-prediction p))
              predictions)))
 
-(defun tides--interpret-prediction (prediction tz)
-  "Interpret a single PREDICTION element in TZ."
-  (list :time (tides--interpret-time (alist-get 't prediction) tz)
+(defun tides--interpret-prediction (prediction)
+  "Interpret a single PREDICTION element."
+  (list :time (tides--interpret-time (alist-get 't prediction))
         :level (string-to-number (alist-get 'v prediction))
         :type (if (string= (alist-get 'type prediction)
                            "h")
                   'high 'low)))
 
-(defun tides--interpret-time (time tz)
-  "Parse a NOAA TIME string in timezone TZ.
-
-TZ should be an appropriate value for the UTC offset parameter of
-a date-time, i.e. a number of minutes offset from UTC.
+(defun tides--interpret-time (time)
+  "Parse a NOAA TIME string.
 
 Returns calendrical data in the format
 
@@ -159,8 +155,20 @@ See `time-convert' for information on time formats."
           (string-to-number (match-string 1 time)) ; year
           nil ; day of week
           -1 ; DST
-          tz ; UTC offset
+          0 ; UTC offset
           )))
+
+(defun tides--get-period-start (&optional now)
+  "Get the period starting string for a date.
+
+NOW must be a Lisp timestamp and not a calendrical date-time.  If
+omitted, defaults to `current-time'."
+  (let* ((midnight (decode-time now)))
+    (setf (decoded-time-hour midnight) 0
+          (decoded-time-minute midnight) 0
+          (decoded-time-second midnight) 0)
+    (format-time-string "%Y%m%d%H%M"
+                        (encode-time midnight) t)))
 
 (provide 'tides)
 ;;; tides.el ends here
