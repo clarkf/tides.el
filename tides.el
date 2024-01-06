@@ -37,6 +37,12 @@ See https://api.tidesandcurrents.noaa.gov/api/prod/#application."
   :group 'tides
   :type '(string))
 
+(defcustom tides-buffer-name
+  "*tides.el predictions*"
+  "Buffer name for presenting tides.el predictions."
+  :group 'tides
+  :type '(string))
+
 (defconst tides--time-regex
   ;; "2024-01-05 00:38"
   (rx string-start
@@ -101,15 +107,7 @@ is for a high- or low-tide."
 
                     ;; if executed interactively, display the prediction
                     (when (not (or executing-kbd-macro noninteractive))
-                      (message
-                       "Forecast: %s"
-                       (seq-map (lambda (p)
-                                  (format "%s tide of %fft at %s"
-                                          (plist-get p :type)
-                                          (plist-get p :level)
-                                          (format-time-string
-                                           "%X" (encode-time (plist-get p :time)))))
-                                result)))
+                      (tides--present-predictions result))
 
                     (when callback
                       (apply callback result))))
@@ -176,6 +174,36 @@ See `time-convert' for information on time formats."
           -1 ; DST
           0 ; UTC offset
           )))
+
+(defun tides--present-predictions (predictions)
+  "Present the PREDICTIONS to the user in `tides-buffer-name'."
+  (let ((buffer (get-buffer-create tides-buffer-name)))
+    (with-current-buffer buffer
+      ;; enable writing to the buffer
+      (setq buffer-read-only nil)
+
+      (erase-buffer)
+      (insert "Forecast:\n")
+
+      (dolist (p predictions)
+        (let ((type (plist-get p :type))
+              (level (plist-get p :level))
+              (time (plist-get p :time)))
+          (insert (format-time-string "%X" (encode-time time)))
+          (insert (format " %s tide of %fft\n"
+                          (propertize
+                           (format "%s" type)
+                           'face (if (eq type 'high) 'error
+                                   'success))
+                          level))))
+
+      ;; ensure that we're in special mode and that it's read only.
+      ;; TODO: probably derive a specific major mode?
+      (unless (eq major-mode 'special-mode)
+        (special-mode))
+      (setq buffer-read-only t))
+
+    (switch-to-buffer buffer)))
 
 (defun tides-midnight-today (&optional now)
   "Convenience function for determining the midnight preceding NOW.
